@@ -133,7 +133,7 @@ export async function createHeader(
   return header;
 }
 
-export async function updateHeader(headerId: string, data: { title?: string; content?: string }) {
+export async function updateHeader(headerId: string, data: { title?: string; content?: string; icon?: string }) {
   const session = await getSession();
   const [header] = await db
     .select({ projectId: headers.projectId })
@@ -282,7 +282,7 @@ export async function reorderNavbarItems(projectId: string, orderedIds: string[]
 
 export async function updateNavbarItem(
   itemId: string,
-  data: { label?: string; href?: string; width?: number }
+  data: { label?: string; href?: string; width?: number; styles?: string }
 ) {
   const session = await getSession();
   const [item] = await db

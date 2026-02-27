@@ -128,13 +128,20 @@ export default function DashboardClient({ initialProjects }: Props) {
                   >
                     Edit
                   </Link>
-                  <Link
-                    href={`/dashboard/${project.id}`}
-                    className="flex-1 text-center py-1.5 rounded-md text-xs font-medium border"
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/docs/${project.id}`;
+                      navigator.clipboard.writeText(url).then(() => {
+                        toast.success("Public link copied");
+                      }).catch(() => {
+                        toast.error("Failed to copy link");
+                      });
+                    }}
+                    className="flex-1 py-1.5 rounded-md text-xs font-medium border"
                     style={{ borderColor: "#D9CFC7" }}
                   >
-                    View
-                  </Link>
+                    Copy Link
+                  </button>
                   <button
                     onClick={() => setDeleteTarget(project)}
                     className="flex-1 py-1.5 rounded-md text-xs font-medium border text-red-600"

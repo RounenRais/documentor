@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import { parseContent, parseStyles } from "@/components/editor/BlockEditor/types";
+import { BlockRenderer } from "@/components/editor/BlockEditor/BlockItem";
 
 type Header = {
   id: string;
@@ -19,6 +18,7 @@ type NavbarItem = {
   label: string | null;
   href: string | null;
   width: number | null;
+  styles: string | null;
   order: number;
 };
 
@@ -127,7 +127,15 @@ export default function DocsClient({ project, headers, navbarItems }: Props) {
 
   function renderNavItem(item: NavbarItem) {
     const w = item.width ?? 120;
-    const baseStyle: React.CSSProperties = { minWidth: w, maxWidth: w };
+    const parsedItemStyles = parseStyles(item.styles ?? "{}");
+    const styleOverrides: React.CSSProperties = {
+      ...(parsedItemStyles.bgColor ? { backgroundColor: parsedItemStyles.bgColor } : {}),
+      ...(parsedItemStyles.textColor ? { color: parsedItemStyles.textColor } : {}),
+      ...(parsedItemStyles.fontSize ? { fontSize: `${parsedItemStyles.fontSize}px` } : {}),
+      ...(parsedItemStyles.padding ? { padding: parsedItemStyles.padding } : {}),
+      ...(parsedItemStyles.borderRadius ? { borderRadius: `${parsedItemStyles.borderRadius}px` } : {}),
+    };
+    const baseStyle: React.CSSProperties = { minWidth: w, maxWidth: w, ...styleOverrides };
 
     if (item.type === "divider-v") {
       return (
@@ -315,36 +323,19 @@ export default function DocsClient({ project, headers, navbarItems }: Props) {
               >
                 {numbering.get(selectedHeader.id)} {selectedHeader.title}
               </h1>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
-                components={{
-                  code({ className, children, ...props }) {
-                    const isBlock = className?.includes("language-");
-                    if (isBlock) {
-                      return (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    }
-                    return (
-                      <code
-                        className="px-1.5 py-0.5 rounded text-xs font-mono"
-                        style={{
-                          backgroundColor: t.bgAlt,
-                          border: `1px solid ${t.border}`,
-                        }}
-                        {...props}
-                      >
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {selectedHeader.content || "*No content yet.*"}
-              </ReactMarkdown>
+              {(() => {
+                const blocks = parseContent(selectedHeader.content);
+                if (blocks.length === 0) {
+                  return <p style={{ color: "#aaa", fontStyle: "italic" }}>No content yet.</p>;
+                }
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {blocks.map((block) => (
+                      <BlockRenderer key={block.id} block={block} readOnly />
+                    ))}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <div className="flex items-center justify-center h-full" style={{ color: "#888" }}>
@@ -353,6 +344,28 @@ export default function DocsClient({ project, headers, navbarItems }: Props) {
           )}
         </main>
       </div>
+
+      <a
+        href="https://github.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          position: "fixed",
+          bottom: "16px",
+          right: "16px",
+          padding: "4px 10px",
+          borderRadius: "6px",
+          fontSize: "11px",
+          backgroundColor: t.bgAlt,
+          border: `1px solid ${t.border}`,
+          color: t.text,
+          textDecoration: "none",
+          opacity: 0.7,
+          zIndex: 50,
+        }}
+      >
+        Built with Documentor
+      </a>
     </div>
   );
 }

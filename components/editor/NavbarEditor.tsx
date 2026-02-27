@@ -24,16 +24,19 @@ import {
   updateNavbarItem,
 } from "@/app/actions/actions";
 
+import { parseStyles, type ItemStyles } from "@/components/editor/BlockEditor/types";
+
 type NavbarItem = {
   id: string;
   type: string;
   label: string | null;
   href: string | null;
   width: number | null;
+  styles: string | null;
   order: number;
 };
 
-type ItemUpdate = { label?: string; href?: string; width?: number };
+type ItemUpdate = { label?: string; href?: string; width?: number; styles?: string };
 
 type Props = {
   projectId: string;
@@ -69,11 +72,15 @@ function GithubIcon() {
 
 function SortableNavItem({
   item,
+  isSelected,
+  onSelect,
   onDelete,
   onUpdate,
   onSearchChange,
 }: {
   item: NavbarItem;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, data: ItemUpdate) => void;
   onSearchChange?: (value: string) => void;
@@ -89,14 +96,24 @@ function SortableNavItem({
 
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
+  const isResizing = useRef(false);
   const currentWidth = item.width ?? 120;
 
-  const dragStyle = {
+  const parsedStyles: ItemStyles = parseStyles(item.styles ?? "{}");
+
+  const dragStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
     width: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
     minWidth: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
+    outline: isSelected ? "2px solid #3b82f6" : "none",
+    outlineOffset: "2px",
+    borderRadius: parsedStyles.borderRadius !== undefined ? `${parsedStyles.borderRadius}px` : undefined,
+    ...(parsedStyles.bgColor ? { backgroundColor: parsedStyles.bgColor } : {}),
+    ...(parsedStyles.textColor ? { color: parsedStyles.textColor } : {}),
+    ...(parsedStyles.fontSize ? { fontSize: `${parsedStyles.fontSize}px` } : {}),
+    ...(parsedStyles.padding ? { padding: parsedStyles.padding } : {}),
   };
 
   function commitLabel() {
@@ -119,20 +136,22 @@ function SortableNavItem({
       e.stopPropagation();
       resizeStartX.current = e.clientX;
       resizeStartWidth.current = currentWidth;
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      isResizing.current = true;
     },
     [currentWidth]
   );
 
   function handleResizePointerMove(e: React.PointerEvent) {
-    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    if (!isResizing.current) return;
     const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
     onUpdate(item.id, { width: newW });
   }
 
   function handleResizePointerUp(e: React.PointerEvent) {
-    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    if (!isResizing.current) return;
+    isResizing.current = false;
     const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
+    onUpdate(item.id, { width: newW });
     updateNavbarItem(item.id, { width: newW }).catch(() => toast.error("Failed to save width"));
   }
 
@@ -440,12 +459,13 @@ function SortableNavItem({
       style={dragStyle}
       className="relative flex items-center gap-1 px-2 py-1 rounded-md border text-sm flex-shrink-0 overflow-hidden"
       {...attributes}
+      onClick={() => onSelect(item.id)}
     >
       <div className="flex items-center gap-1 w-full min-w-0" {...listeners}>
         {renderContent()}
         <button
           {...stopProp}
-          onClick={() => onDelete(item.id)}
+          onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
           className="ml-auto text-gray-300 hover:text-red-400 flex-shrink-0 text-base leading-none"
         >
           ×
@@ -467,6 +487,7 @@ function SortableNavItem({
 export default function NavbarEditor({ projectId, projectName, initialItems, onSearch }: Props) {
   const [items, setItems] = useState<NavbarItem[]>(initialItems);
   const [showToolbox, setShowToolbox] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -493,7 +514,7 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
         type,
         type === "title" ? projectName : label
       );
-      setItems((prev) => [...prev, item]);
+      setItems((prev) => [...prev, { ...item, styles: null }]);
       setShowToolbox(false);
     } catch {
       toast.error("Failed to add item");
@@ -504,6 +525,7 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
     try {
       await deleteNavbarItem(id);
       setItems((prev) => prev.filter((i) => i.id !== id));
+      if (selectedItemId === id) setSelectedItemId(null);
     } catch {
       toast.error("Failed to remove item");
     }
@@ -516,72 +538,157 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
     }
   }
 
+  function handleStyleChange(id: string, key: keyof ItemStyles, value: string | number) {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    const current = parseStyles(item.styles ?? "{}");
+    const next: ItemStyles = { ...current, [key]: value };
+    const stylesStr = JSON.stringify(next);
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, styles: stylesStr } : i)));
+    updateNavbarItem(id, { styles: stylesStr }).catch(() => toast.error("Failed to save styles"));
+  }
+
+  const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
+  const selectedStyles = parseStyles(selectedItem?.styles ?? "{}");
+
   return (
     <div
-      className="flex items-center gap-2 px-4 border-b flex-shrink-0"
-      style={{
-        height: "60px",
-        borderColor: "var(--color-border)",
-        backgroundColor: "var(--color-bg-alt)",
-      }}
+      className="border-b flex-shrink-0"
+      style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg-alt)" }}
     >
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex items-center gap-2 flex-1 overflow-x-auto h-full py-2">
-            {items.length === 0 && (
-              <span className="text-xs" style={{ color: "#aaa" }}>
-                Click + Add to build your navbar
-              </span>
-            )}
-            {items.map((item) => (
-              <SortableNavItem
-                key={item.id}
-                item={item}
-                onDelete={handleDelete}
-                onUpdate={handleUpdate}
-                onSearchChange={item.type === "search" ? onSearch : undefined}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-
-      <div className="relative flex-shrink-0">
-        <button
-          onClick={() => setShowToolbox((v) => !v)}
-          className="px-3 py-1.5 rounded-md text-xs font-medium border transition-opacity hover:opacity-70"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          + Add
-        </button>
-        {showToolbox && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShowToolbox(false)} />
-            <div
-              className="absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-md z-20 py-1"
-              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg)" }}
-            >
-              {AVAILABLE_TOOLS.map((tool) => (
-                <button
-                  key={tool.type}
-                  onClick={() => handleAddItem(tool.type, tool.label)}
-                  className="w-full text-left px-3 py-2 text-sm transition-opacity hover:opacity-70"
-                  style={{ backgroundColor: "transparent" }}
-                  onMouseEnter={(e) =>
-                    ((e.currentTarget as HTMLElement).style.backgroundColor =
-                      "var(--color-bg-alt)")
-                  }
-                  onMouseLeave={(e) =>
-                    ((e.currentTarget as HTMLElement).style.backgroundColor = "transparent")
-                  }
-                >
-                  {tool.label}
-                </button>
+      <div className="flex items-center gap-2 px-4" style={{ height: "60px" }}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
+            <div className="flex items-center gap-2 flex-1 overflow-x-auto h-full py-2">
+              {items.length === 0 && (
+                <span className="text-xs" style={{ color: "#aaa" }}>
+                  Click + Add to build your navbar
+                </span>
+              )}
+              {items.map((item) => (
+                <SortableNavItem
+                  key={item.id}
+                  item={item}
+                  isSelected={selectedItemId === item.id}
+                  onSelect={(id) => setSelectedItemId((prev) => (prev === id ? null : id))}
+                  onDelete={handleDelete}
+                  onUpdate={handleUpdate}
+                  onSearchChange={item.type === "search" ? onSearch : undefined}
+                />
               ))}
             </div>
-          </>
-        )}
+          </SortableContext>
+        </DndContext>
+
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowToolbox((v) => !v)}
+            className="px-3 py-1.5 rounded-md text-xs font-medium border transition-opacity hover:opacity-70"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            + Add
+          </button>
+          {showToolbox && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowToolbox(false)} />
+              <div
+                className="absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-md z-20 py-1"
+                style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg)" }}
+              >
+                {AVAILABLE_TOOLS.map((tool) => (
+                  <button
+                    key={tool.type}
+                    onClick={() => handleAddItem(tool.type, tool.label)}
+                    className="w-full text-left px-3 py-2 text-sm transition-opacity hover:opacity-70"
+                    style={{ backgroundColor: "transparent" }}
+                    onMouseEnter={(e) =>
+                      ((e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-alt)")
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.currentTarget as HTMLElement).style.backgroundColor = "transparent")
+                    }
+                  >
+                    {tool.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {selectedItem && (
+        <div
+          className="flex items-center gap-4 px-4 py-2 border-t"
+          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg)" }}
+        >
+          <span className="text-xs font-medium" style={{ color: "#888" }}>Style: {selectedItem.type}</span>
+          <label className="flex items-center gap-1.5 text-xs">
+            Bg
+            <input
+              type="color"
+              value={selectedStyles.bgColor || "#EFE9E3"}
+              onChange={(e) => handleStyleChange(selectedItem.id, "bgColor", e.target.value)}
+              style={{ width: "20px", height: "20px", border: "none", cursor: "pointer" }}
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs">
+            Text
+            <input
+              type="color"
+              value={selectedStyles.textColor || "#1a1a1a"}
+              onChange={(e) => handleStyleChange(selectedItem.id, "textColor", e.target.value)}
+              style={{ width: "20px", height: "20px", border: "none", cursor: "pointer" }}
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs">
+            Font size
+            <input
+              type="number"
+              value={selectedStyles.fontSize || 13}
+              min={10}
+              max={24}
+              onChange={(e) => handleStyleChange(selectedItem.id, "fontSize", Number(e.target.value))}
+              style={{ width: "42px", fontSize: "11px", padding: "1px 4px", border: "1px solid #D9CFC7", borderRadius: "3px" }}
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs">
+            Padding
+            <input
+              type="text"
+              value={selectedStyles.padding || ""}
+              onChange={(e) => handleStyleChange(selectedItem.id, "padding", e.target.value)}
+              placeholder="4px 8px"
+              style={{ width: "72px", fontSize: "11px", padding: "1px 4px", border: "1px solid #D9CFC7", borderRadius: "3px" }}
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs">
+            Radius
+            <input
+              type="number"
+              value={selectedStyles.borderRadius || 0}
+              min={0}
+              max={50}
+              onChange={(e) => handleStyleChange(selectedItem.id, "borderRadius", Number(e.target.value))}
+              style={{ width: "42px", fontSize: "11px", padding: "1px 4px", border: "1px solid #D9CFC7", borderRadius: "3px" }}
+            />
+          </label>
+          <button
+            onClick={() => { handleDelete(selectedItem.id); }}
+            className="ml-auto text-xs px-2 py-1 rounded border"
+            style={{ color: "#ef4444", borderColor: "#ef4444" }}
+          >
+            Delete item
+          </button>
+          <button
+            onClick={() => setSelectedItemId(null)}
+            className="text-xs"
+            style={{ color: "#aaa" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

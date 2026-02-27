@@ -29,6 +29,7 @@ export const headers = pgTable("headers", {
   parentId: uuid("parent_id").references((): any => headers.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   content: text("content").default(""),
+  icon: text("icon").default(""),
   order: integer("order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -43,6 +44,7 @@ export const navbarItems = pgTable("navbar_items", {
   label: text("label"),
   href: text("href").default(""),
   width: integer("width").default(120),
+  styles: text("styles").default("{}"),
   order: integer("order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

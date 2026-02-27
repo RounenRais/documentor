@@ -5,7 +5,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import NavbarEditor from "./NavbarEditor";
 import HeaderPanel from "./HeaderPanel";
-import ContentEditor from "./ContentEditor";
+import BlockEditor from "./BlockEditor";
 import { generateHtml } from "@/lib/exportHtml";
 
 type Header = {
@@ -14,6 +14,7 @@ type Header = {
   content: string | null;
   order: number;
   parentId: string | null;
+  icon: string | null;
 };
 
 type NavbarItem = {
@@ -22,6 +23,7 @@ type NavbarItem = {
   label: string | null;
   href: string | null;
   width: number | null;
+  styles: string | null;
   order: number;
 };
 
@@ -45,7 +47,7 @@ const DEFAULT_COLORS: ColorScheme = {
   accent: "#C9B59C",
 };
 
-const LS_KEY = "docColorScheme";
+const lsKey = (projectId: string) => `docColorScheme:${projectId}`;
 
 function applyColors(c: ColorScheme) {
   const r = document.documentElement;
@@ -73,16 +75,18 @@ export default function EditorClient({ project, initialHeaders, initialNavbarIte
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(LS_KEY);
+      const stored = localStorage.getItem(lsKey(project.id));
       if (stored) {
         const parsed: ColorScheme = JSON.parse(stored);
         setColors(parsed);
         applyColors(parsed);
+      } else {
+        applyColors(DEFAULT_COLORS);
       }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [project.id]);
 
   function handleColorChange(key: keyof ColorScheme, value: string) {
     const next = { ...colors, [key]: value };
@@ -90,14 +94,14 @@ export default function EditorClient({ project, initialHeaders, initialNavbarIte
     applyColors(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      localStorage.setItem(LS_KEY, JSON.stringify(next));
+      localStorage.setItem(lsKey(project.id), JSON.stringify(next));
     }, 300);
   }
 
   function handleResetColors() {
     setColors(DEFAULT_COLORS);
     applyColors(DEFAULT_COLORS);
-    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(lsKey(project.id));
   }
 
   const selectedHeader = headers.find((h) => h.id === selectedHeaderId) ?? null;
@@ -209,6 +213,20 @@ export default function EditorClient({ project, initialHeaders, initialNavbarIte
             )}
           </div>
 
+          <Link
+            href={`/docs/${project.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-1.5 rounded-md text-sm font-medium border flex items-center gap-1"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Preview
+          </Link>
+
           <button
             onClick={handleExportHtml}
             className="px-4 py-1.5 rounded-md text-sm font-medium text-white"
@@ -226,7 +244,7 @@ export default function EditorClient({ project, initialHeaders, initialNavbarIte
         onSearch={setSearchQuery}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <HeaderPanel
           projectId={project.id}
           headers={headers}
@@ -236,7 +254,7 @@ export default function EditorClient({ project, initialHeaders, initialNavbarIte
           searchQuery={searchQuery}
         />
 
-        <ContentEditor
+        <BlockEditor
           key={selectedHeaderId ?? "none"}
           header={
             selectedHeader
