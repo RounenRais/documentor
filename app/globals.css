@@ -1,26 +1,22 @@
 @import "tailwindcss";
+@import "highlight.js/styles/github.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg: #F9F8F6;
+  --color-bg-alt: #EFE9E3;
+  --color-border: #D9CFC7;
+  --color-accent: #C9B59C;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background-color: var(--color-bg);
+  color: #1a1a1a;
   font-family: Arial, Helvetica, sans-serif;
+  min-width: 1280px;
+}
+
+.hljs {
+  background: #f4f4f4 !important;
+  border-radius: 6px;
+  padding: 1rem !important;
 }

@@ -1,0 +1,587 @@
+"use client";
+
+import { useState, useRef, useCallback } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import toast from "react-hot-toast";
+import {
+  createNavbarItem,
+  deleteNavbarItem,
+  reorderNavbarItems,
+  updateNavbarItem,
+} from "@/app/actions/actions";
+
+type NavbarItem = {
+  id: string;
+  type: string;
+  label: string | null;
+  href: string | null;
+  width: number | null;
+  order: number;
+};
+
+type ItemUpdate = { label?: string; href?: string; width?: number };
+
+type Props = {
+  projectId: string;
+  projectName: string;
+  initialItems: NavbarItem[];
+  onSearch?: (query: string) => void;
+};
+
+const AVAILABLE_TOOLS = [
+  { type: "title", label: "Project Title" },
+  { type: "search", label: "Search Box" },
+  { type: "link", label: "Link" },
+  { type: "button", label: "Button" },
+  { type: "badge", label: "Badge" },
+  { type: "divider-v", label: "Divider" },
+  { type: "github", label: "GitHub Link" },
+  { type: "theme-toggle", label: "Theme Toggle" },
+];
+
+function GithubIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      style={{ flexShrink: 0 }}
+    >
+      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+    </svg>
+  );
+}
+
+function SortableNavItem({
+  item,
+  onDelete,
+  onUpdate,
+  onSearchChange,
+}: {
+  item: NavbarItem;
+  onDelete: (id: string) => void;
+  onUpdate: (id: string, data: ItemUpdate) => void;
+  onSearchChange?: (value: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelValue, setLabelValue] = useState(item.label ?? "");
+  const [editingHref, setEditingHref] = useState(false);
+  const [hrefValue, setHrefValue] = useState(item.href ?? "");
+  const [searchValue, setSearchValue] = useState("");
+
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
+  const currentWidth = item.width ?? 120;
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    width: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
+    minWidth: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
+  };
+
+  function commitLabel() {
+    setEditingLabel(false);
+    if (labelValue !== (item.label ?? "")) {
+      onUpdate(item.id, { label: labelValue });
+    }
+  }
+
+  function commitHref() {
+    setEditingHref(false);
+    if (hrefValue !== (item.href ?? "")) {
+      onUpdate(item.id, { href: hrefValue });
+    }
+  }
+
+  const handleResizePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resizeStartX.current = e.clientX;
+      resizeStartWidth.current = currentWidth;
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [currentWidth]
+  );
+
+  function handleResizePointerMove(e: React.PointerEvent) {
+    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
+    onUpdate(item.id, { width: newW });
+  }
+
+  function handleResizePointerUp(e: React.PointerEvent) {
+    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
+    updateNavbarItem(item.id, { width: newW }).catch(() => toast.error("Failed to save width"));
+  }
+
+  const stopProp = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
+
+  const InlineInput = ({
+    value,
+    onChange,
+    onBlur,
+    onKeyDown,
+    placeholder,
+    bold,
+    style,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    onBlur: () => void;
+    onKeyDown?: (e: React.KeyboardEvent) => void;
+    placeholder?: string;
+    bold?: boolean;
+    style?: React.CSSProperties;
+  }) => (
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
+      {...stopProp}
+      className="outline-none bg-transparent border-b text-sm w-full"
+      style={{ borderColor: "var(--color-border)", fontWeight: bold ? 700 : 400, ...style }}
+      placeholder={placeholder}
+    />
+  );
+
+  const renderContent = () => {
+    if (item.type === "divider-v") {
+      return (
+        <div
+          className="h-6 w-px mx-1 flex-shrink-0"
+          style={{ backgroundColor: "var(--color-border)" }}
+        />
+      );
+    }
+
+    if (item.type === "title") {
+      return editingLabel ? (
+        <InlineInput
+          value={labelValue}
+          onChange={setLabelValue}
+          onBlur={commitLabel}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitLabel();
+            if (e.key === "Escape") {
+              setEditingLabel(false);
+              setLabelValue(item.label ?? "");
+            }
+          }}
+          bold
+          placeholder="Project title"
+        />
+      ) : (
+        <span
+          className="font-bold text-sm truncate cursor-text select-text flex-1"
+          onClick={() => setEditingLabel(true)}
+          {...stopProp}
+          title="Click to edit"
+        >
+          {item.label || "Title"}
+        </span>
+      );
+    }
+
+    if (item.type === "search") {
+      return (
+        <div className="flex items-center gap-1 w-full" {...stopProp}>
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            style={{ flexShrink: 0, color: "#888" }}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            value={searchValue}
+            onChange={(e) => {
+              setSearchValue(e.target.value);
+              onSearchChange?.(e.target.value);
+            }}
+            placeholder="Search headers..."
+            className="outline-none bg-transparent text-xs flex-1 min-w-0"
+            style={{ color: "inherit" }}
+          />
+        </div>
+      );
+    }
+
+    if (item.type === "link") {
+      return (
+        <div className="flex flex-col w-full" {...stopProp}>
+          {editingLabel ? (
+            <InlineInput
+              value={labelValue}
+              onChange={setLabelValue}
+              onBlur={commitLabel}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitLabel();
+                  setEditingHref(true);
+                }
+                if (e.key === "Escape") {
+                  setEditingLabel(false);
+                  setLabelValue(item.label ?? "");
+                }
+              }}
+              placeholder="Link label"
+            />
+          ) : (
+            <span
+              className="truncate text-xs cursor-text"
+              style={{ color: "var(--color-accent)" }}
+              onClick={() => setEditingLabel(true)}
+              title="Click to edit label"
+            >
+              {item.label || "Link"}
+            </span>
+          )}
+          {editingHref ? (
+            <InlineInput
+              value={hrefValue}
+              onChange={setHrefValue}
+              onBlur={commitHref}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitHref();
+                if (e.key === "Escape") {
+                  setEditingHref(false);
+                  setHrefValue(item.href ?? "");
+                }
+              }}
+              placeholder="https://..."
+              style={{ color: "#888", fontSize: "11px" }}
+            />
+          ) : (
+            <span
+              className="truncate text-xs cursor-text"
+              style={{ color: "#aaa", fontSize: "11px" }}
+              onClick={() => setEditingHref(true)}
+              title="Click to set URL"
+            >
+              {item.href || "set url →"}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (item.type === "button") {
+      return (
+        <div className="flex flex-col w-full" {...stopProp}>
+          {editingLabel ? (
+            <InlineInput
+              value={labelValue}
+              onChange={setLabelValue}
+              onBlur={commitLabel}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitLabel();
+                if (e.key === "Escape") {
+                  setEditingLabel(false);
+                  setLabelValue(item.label ?? "");
+                }
+              }}
+              placeholder="Button label"
+            />
+          ) : (
+            <span
+              className="inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium text-white cursor-text truncate"
+              style={{ backgroundColor: "var(--color-accent)" }}
+              onClick={() => setEditingLabel(true)}
+              title="Click to edit label"
+            >
+              {item.label || "Button"}
+            </span>
+          )}
+          {editingHref ? (
+            <InlineInput
+              value={hrefValue}
+              onChange={setHrefValue}
+              onBlur={commitHref}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitHref();
+                if (e.key === "Escape") {
+                  setEditingHref(false);
+                  setHrefValue(item.href ?? "");
+                }
+              }}
+              placeholder="https://..."
+              style={{ color: "#888", fontSize: "11px" }}
+            />
+          ) : (
+            <span
+              className="truncate cursor-text"
+              style={{ color: "#aaa", fontSize: "11px" }}
+              onClick={() => setEditingHref(true)}
+              title="Click to set URL"
+            >
+              {item.href || "set url →"}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (item.type === "badge") {
+      return editingLabel ? (
+        <InlineInput
+          value={labelValue}
+          onChange={setLabelValue}
+          onBlur={commitLabel}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitLabel();
+            if (e.key === "Escape") {
+              setEditingLabel(false);
+              setLabelValue(item.label ?? "");
+            }
+          }}
+          placeholder="Badge text"
+          {...stopProp}
+        />
+      ) : (
+        <span
+          className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs border cursor-text"
+          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg-alt)" }}
+          onClick={() => setEditingLabel(true)}
+          {...stopProp}
+          title="Click to edit"
+        >
+          {item.label || "v1.0.0"}
+        </span>
+      );
+    }
+
+    if (item.type === "github") {
+      return (
+        <div className="flex items-center gap-1 w-full" {...stopProp}>
+          <GithubIcon />
+          {editingHref ? (
+            <InlineInput
+              value={hrefValue}
+              onChange={setHrefValue}
+              onBlur={commitHref}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitHref();
+                if (e.key === "Escape") {
+                  setEditingHref(false);
+                  setHrefValue(item.href ?? "");
+                }
+              }}
+              placeholder="https://github.com/..."
+              style={{ fontSize: "11px", color: "#888" }}
+            />
+          ) : (
+            <span
+              className="truncate text-xs cursor-text flex-1"
+              style={{ color: "#888" }}
+              onClick={() => setEditingHref(true)}
+              title="Click to set GitHub URL"
+            >
+              {item.href || "set repo url →"}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (item.type === "theme-toggle") {
+      return (
+        <div className="flex items-center gap-1 text-xs" {...stopProp}>
+          <span>☀️</span>
+          <span style={{ color: "#aaa" }}>/</span>
+          <span>🌙</span>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  if (item.type === "divider-v") {
+    return (
+      <div ref={setNodeRef} style={dragStyle} {...attributes} {...listeners} className="flex items-center flex-shrink-0">
+        <div className="h-6 w-px mx-1" style={{ backgroundColor: "var(--color-border)" }} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={dragStyle}
+      className="relative flex items-center gap-1 px-2 py-1 rounded-md border text-sm flex-shrink-0 overflow-hidden"
+      {...attributes}
+    >
+      <div className="flex items-center gap-1 w-full min-w-0" {...listeners}>
+        {renderContent()}
+        <button
+          {...stopProp}
+          onClick={() => onDelete(item.id)}
+          className="ml-auto text-gray-300 hover:text-red-400 flex-shrink-0 text-base leading-none"
+        >
+          ×
+        </button>
+      </div>
+      {item.type !== "divider-v" && (
+        <div
+          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize opacity-0 hover:opacity-100 transition-opacity"
+          style={{ backgroundColor: "var(--color-accent)" }}
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerUp}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function NavbarEditor({ projectId, projectName, initialItems, onSearch }: Props) {
+  const [items, setItems] = useState<NavbarItem[]>(initialItems);
+  const [showToolbox, setShowToolbox] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = items.findIndex((i) => i.id === active.id);
+    const newIdx = items.findIndex((i) => i.id === over.id);
+    const reordered = arrayMove(items, oldIdx, newIdx);
+    setItems(reordered);
+    try {
+      await reorderNavbarItems(projectId, reordered.map((i) => i.id));
+    } catch {
+      toast.error("Failed to reorder");
+    }
+  }
+
+  async function handleAddItem(type: string, label: string) {
+    try {
+      const item = await createNavbarItem(
+        projectId,
+        type,
+        type === "title" ? projectName : label
+      );
+      setItems((prev) => [...prev, item]);
+      setShowToolbox(false);
+    } catch {
+      toast.error("Failed to add item");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteNavbarItem(id);
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } catch {
+      toast.error("Failed to remove item");
+    }
+  }
+
+  function handleUpdate(id: string, data: ItemUpdate) {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...data } : i)));
+    if (data.label !== undefined || data.href !== undefined) {
+      updateNavbarItem(id, data).catch(() => toast.error("Failed to save"));
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 px-4 border-b flex-shrink-0"
+      style={{
+        height: "60px",
+        borderColor: "var(--color-border)",
+        backgroundColor: "var(--color-bg-alt)",
+      }}
+    >
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
+          <div className="flex items-center gap-2 flex-1 overflow-x-auto h-full py-2">
+            {items.length === 0 && (
+              <span className="text-xs" style={{ color: "#aaa" }}>
+                Click + Add to build your navbar
+              </span>
+            )}
+            {items.map((item) => (
+              <SortableNavItem
+                key={item.id}
+                item={item}
+                onDelete={handleDelete}
+                onUpdate={handleUpdate}
+                onSearchChange={item.type === "search" ? onSearch : undefined}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <div className="relative flex-shrink-0">
+        <button
+          onClick={() => setShowToolbox((v) => !v)}
+          className="px-3 py-1.5 rounded-md text-xs font-medium border transition-opacity hover:opacity-70"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          + Add
+        </button>
+        {showToolbox && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowToolbox(false)} />
+            <div
+              className="absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-md z-20 py-1"
+              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg)" }}
+            >
+              {AVAILABLE_TOOLS.map((tool) => (
+                <button
+                  key={tool.type}
+                  onClick={() => handleAddItem(tool.type, tool.label)}
+                  className="w-full text-left px-3 py-2 text-sm transition-opacity hover:opacity-70"
+                  style={{ backgroundColor: "transparent" }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLElement).style.backgroundColor =
+                      "var(--color-bg-alt)")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLElement).style.backgroundColor = "transparent")
+                  }
+                >
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
