@@ -16,16 +16,18 @@ export default function SignUpForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-
-    const result = await registerUser({ name, email, password });
-
-    setLoading(false);
-
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      toast.success("Account created! Please sign in.");
-      router.push("/login");
+    try {
+      const result = await registerUser({ name, email, password });
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Account created! Please sign in.");
+        router.push("/login");
+      }
+    } catch {
+      toast.error("Sign up failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
   }
 

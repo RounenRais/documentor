@@ -22,17 +22,33 @@ export async function registerUser({
   email: string;
   password: string;
 }): Promise<{ error?: string }> {
-  const existing = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
+  try {
+    const normalizedName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
 
-  if (existing.length > 0) return { error: "Email already in use" };
+    if (!normalizedName || !normalizedEmail || !password) {
+      return { error: "Please fill all fields" };
+    }
 
-  const hashed = await bcrypt.hash(password, 10);
-  await db.insert(users).values({ name, email, password: hashed });
-  return {};
+    if (password.length < 6) {
+      return { error: "Password must be at least 6 characters" };
+    }
+
+    const existing = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+
+    if (existing.length > 0) return { error: "Email already in use" };
+
+    const hashed = await bcrypt.hash(password, 10);
+    await db.insert(users).values({ name: normalizedName, email: normalizedEmail, password: hashed });
+    return {};
+  } catch (error) {
+    console.error("registerUser failed:", error);
+    return { error: "Sign up failed. Please try again." };
+  }
 }
 
 export async function createProject(data: { name: string; description?: string }) {
