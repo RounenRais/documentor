@@ -14,6 +14,8 @@ import toast from "react-hot-toast";
 import { updateHeader } from "@/app/actions/actions";
 import { useHistory } from "@/hooks/useHistory";
 import { parseContent, createBlock, type Block, type BlockData, type BlockType } from "./types";
+
+type BlockWidth = Block["width"];
 import BlockItem from "./BlockItem";
 import BlockPicker from "./BlockPicker";
 
@@ -138,6 +140,10 @@ export default function BlockEditor({ header, onContentChange }: Props) {
     applyBlocks(arrayMove(blocks, idx, idx + 1));
   }
 
+  function handleWidthChange(id: string, width: BlockWidth) {
+    applyBlocks(blocks.map((b) => (b.id === id ? { ...b, width } : b)));
+  }
+
   function handleDuplicate(id: string) {
     const idx = blocks.findIndex((b) => b.id === id);
     if (idx < 0) return;
@@ -222,9 +228,9 @@ export default function BlockEditor({ header, onContentChange }: Props) {
             .group:hover .insert-below-btn { display: flex !important; }
           `}</style>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext id="blocks-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "flex-start" }}>
                 {blocks.map((block, index) => (
                   <BlockItem
                     key={block.id}
@@ -239,6 +245,7 @@ export default function BlockEditor({ header, onContentChange }: Props) {
                     onDuplicate={handleDuplicate}
                     onDelete={handleDelete}
                     onInsertBelow={handleInsertBelow}
+                    onWidthChange={handleWidthChange}
                   />
                 ))}
               </div>

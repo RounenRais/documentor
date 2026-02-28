@@ -301,7 +301,12 @@ export async function updateNavbarItem(
 
   if (!project) throw new Error("Unauthorized");
 
-  await db.update(navbarItems).set(data).where(eq(navbarItems.id, itemId));
+  const payload = {
+    ...data,
+    ...(typeof data.width === "number" ? { width: Math.max(60, Math.round(data.width)) } : {}),
+  };
+
+  await db.update(navbarItems).set(payload).where(eq(navbarItems.id, itemId));
   revalidatePath(`/dashboard/${item.projectId}`);
 }
 

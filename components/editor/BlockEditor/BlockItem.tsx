@@ -3,6 +3,13 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Block, BlockData } from "./types";
+
+const BLOCK_WIDTH_MAP: Record<string, string> = {
+  full: "100%",
+  "1/2": "calc(50% - 4px)",
+  "1/3": "calc(33.333% - 6px)",
+  "2/3": "calc(66.666% - 3px)",
+};
 import BlockToolbar from "./BlockToolbar";
 import TextBlock from "./blocks/TextBlock";
 import HeadingBlock from "./blocks/HeadingBlock";
@@ -28,6 +35,7 @@ type Props = {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onInsertBelow: (id: string) => void;
+  onWidthChange?: (id: string, width: Block["width"]) => void;
 };
 
 function BlockRenderer({ block, onChange, readOnly }: { block: Block; onChange?: (data: BlockData) => void; readOnly?: boolean }) {
@@ -71,14 +79,19 @@ export default function BlockItem({
   onDuplicate,
   onDelete,
   onInsertBelow,
+  onWidthChange,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
+
+  const blockWidthCss = BLOCK_WIDTH_MAP[block.width ?? "full"] ?? "100%";
 
   const dragStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
     position: "relative",
+    width: blockWidthCss,
+    flexShrink: 0,
   };
 
   if (readOnly) {
@@ -119,12 +132,14 @@ export default function BlockItem({
             block={block}
             index={index}
             total={total}
+            blockWidth={block.width}
             onChange={(data) => onChange(block.id, data)}
             onMoveUp={() => onMoveUp(block.id)}
             onMoveDown={() => onMoveDown(block.id)}
             onDuplicate={() => onDuplicate(block.id)}
             onDelete={() => onDelete(block.id)}
             onInsertBelow={() => onInsertBelow(block.id)}
+            onWidthChange={onWidthChange ? (w) => onWidthChange(block.id, w) : undefined}
           />
         )}
 

@@ -397,7 +397,7 @@ export default function HeaderPanel({
               No headers yet. Click + New to add one.
             </div>
           )}
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext id="headers-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={displayOrder.map((h) => h.id)} strategy={verticalListSortingStrategy}>
               {displayOrder.map((header) => (
                 <SortableHeaderRow

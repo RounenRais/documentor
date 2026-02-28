@@ -2,16 +2,20 @@
 
 import type { Block, BlockData, TextBlockData, HeadingBlockData, CodeBlockData, CalloutBlockData, ImageBlockData, DividerBlockData, ButtonBlockData, BadgeBlockData } from "./types";
 
+type BlockWidth = Block["width"];
+
 type Props = {
   block: Block;
   index: number;
   total: number;
+  blockWidth?: BlockWidth;
   onChange: (data: BlockData) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onInsertBelow: () => void;
+  onWidthChange?: (width: BlockWidth) => void;
 };
 
 const LANGS = ["typescript", "javascript", "python", "bash", "html", "css", "json", "sql", "go", "rust", "java", "cpp"];
@@ -45,7 +49,7 @@ function Sep() {
   return <span style={{ width: "1px", height: "14px", backgroundColor: "#D9CFC7", flexShrink: 0 }} />;
 }
 
-export default function BlockToolbar({ block, index, total, onChange, onMoveUp, onMoveDown, onDuplicate, onDelete, onInsertBelow }: Props) {
+export default function BlockToolbar({ block, index, total, blockWidth, onChange, onMoveUp, onMoveDown, onDuplicate, onDelete, onInsertBelow, onWidthChange }: Props) {
   const d = block.data;
 
   const renderTypeControls = () => {
@@ -279,6 +283,23 @@ export default function BlockToolbar({ block, index, total, onChange, onMoveUp, 
       <Sep />
       <span style={{ fontSize: "11px", color: "#aaa", padding: "0 3px" }}>{d.type}</span>
       {renderTypeControls()}
+      {onWidthChange && (
+        <>
+          <Sep />
+          <select
+            value={blockWidth ?? "full"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => onWidthChange(e.target.value as BlockWidth)}
+            title="Block width"
+            style={{ fontSize: "11px", border: "1px solid #D9CFC7", borderRadius: "3px", padding: "1px 3px" }}
+          >
+            <option value="full">Full</option>
+            <option value="1/2">1/2</option>
+            <option value="1/3">1/3</option>
+            <option value="2/3">2/3</option>
+          </select>
+        </>
+      )}
       <Sep />
       <Btn onClick={onDelete} title="Delete block" style={{ color: "#ef4444" }}>🗑</Btn>
     </div>

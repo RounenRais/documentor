@@ -1,26 +1,18 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   DndContext,
-  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
+  useDraggable,
   DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  useSortable,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import toast from "react-hot-toast";
 import {
   createNavbarItem,
   deleteNavbarItem,
-  reorderNavbarItems,
   updateNavbarItem,
 } from "@/app/actions/actions";
 
@@ -70,8 +62,32 @@ function GithubIcon() {
   );
 }
 
-function SortableNavItem({
+function getItemX(item: NavbarItem, index: number, allItems: NavbarItem[]): number {
+  const styles = parseStyles(item.styles ?? "{}");
+  if (typeof styles.x === "number") return styles.x;
+  let x = 8;
+  for (let i = 0; i < index; i++) {
+    const w = allItems[i].type === "divider-v" ? 20 : (allItems[i].width ?? 120);
+    const prevStyles = parseStyles(allItems[i].styles ?? "{}");
+    x = typeof prevStyles.x === "number" ? prevStyles.x + w + 8 : x + w + 8;
+  }
+  return x;
+}
+
+function computeNextX(items: NavbarItem[]): number {
+  if (items.length === 0) return 8;
+  let maxRight = 8;
+  items.forEach((item, i) => {
+    const x = getItemX(item, i, items);
+    const w = item.type === "divider-v" ? 20 : (item.width ?? 120);
+    maxRight = Math.max(maxRight, x + w + 8);
+  });
+  return maxRight;
+}
+
+function DraggableNavItem({
   item,
+  itemX,
   isSelected,
   onSelect,
   onDelete,
@@ -79,14 +95,14 @@ function SortableNavItem({
   onSearchChange,
 }: {
   item: NavbarItem;
+  itemX: number;
   isSelected: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, data: ItemUpdate) => void;
   onSearchChange?: (value: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
 
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelValue, setLabelValue] = useState(item.label ?? "");
@@ -101,10 +117,14 @@ function SortableNavItem({
 
   const parsedStyles: ItemStyles = parseStyles(item.styles ?? "{}");
 
-  const dragStyle: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
+  const left = itemX + (transform?.x ?? 0);
+
+  const containerStyle: React.CSSProperties = {
+    position: "absolute",
+    left: `${left}px`,
+    top: "50%",
+    transform: "translateY(-50%)",
+    zIndex: isDragging ? 20 : 1,
     width: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
     minWidth: item.type === "divider-v" ? "auto" : `${currentWidth}px`,
     outline: isSelected ? "2px solid #3b82f6" : "none",
@@ -134,6 +154,7 @@ function SortableNavItem({
     (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       resizeStartX.current = e.clientX;
       resizeStartWidth.current = currentWidth;
       isResizing.current = true;
@@ -143,16 +164,15 @@ function SortableNavItem({
 
   function handleResizePointerMove(e: React.PointerEvent) {
     if (!isResizing.current) return;
-    const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
+    const newW = Math.max(60, Math.round(resizeStartWidth.current + (e.clientX - resizeStartX.current)));
     onUpdate(item.id, { width: newW });
   }
 
   function handleResizePointerUp(e: React.PointerEvent) {
     if (!isResizing.current) return;
     isResizing.current = false;
-    const newW = Math.max(60, resizeStartWidth.current + (e.clientX - resizeStartX.current));
+    const newW = Math.max(60, Math.round(resizeStartWidth.current + (e.clientX - resizeStartX.current)));
     onUpdate(item.id, { width: newW });
-    updateNavbarItem(item.id, { width: newW }).catch(() => toast.error("Failed to save width"));
   }
 
   const stopProp = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
@@ -205,10 +225,7 @@ function SortableNavItem({
           onBlur={commitLabel}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitLabel();
-            if (e.key === "Escape") {
-              setEditingLabel(false);
-              setLabelValue(item.label ?? "");
-            }
+            if (e.key === "Escape") { setEditingLabel(false); setLabelValue(item.label ?? ""); }
           }}
           bold
           placeholder="Project title"
@@ -264,14 +281,8 @@ function SortableNavItem({
               onChange={setLabelValue}
               onBlur={commitLabel}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  commitLabel();
-                  setEditingHref(true);
-                }
-                if (e.key === "Escape") {
-                  setEditingLabel(false);
-                  setLabelValue(item.label ?? "");
-                }
+                if (e.key === "Enter") { commitLabel(); setEditingHref(true); }
+                if (e.key === "Escape") { setEditingLabel(false); setLabelValue(item.label ?? ""); }
               }}
               placeholder="Link label"
             />
@@ -292,10 +303,7 @@ function SortableNavItem({
               onBlur={commitHref}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitHref();
-                if (e.key === "Escape") {
-                  setEditingHref(false);
-                  setHrefValue(item.href ?? "");
-                }
+                if (e.key === "Escape") { setEditingHref(false); setHrefValue(item.href ?? ""); }
               }}
               placeholder="https://..."
               style={{ color: "#888", fontSize: "11px" }}
@@ -324,10 +332,7 @@ function SortableNavItem({
               onBlur={commitLabel}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitLabel();
-                if (e.key === "Escape") {
-                  setEditingLabel(false);
-                  setLabelValue(item.label ?? "");
-                }
+                if (e.key === "Escape") { setEditingLabel(false); setLabelValue(item.label ?? ""); }
               }}
               placeholder="Button label"
             />
@@ -348,10 +353,7 @@ function SortableNavItem({
               onBlur={commitHref}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitHref();
-                if (e.key === "Escape") {
-                  setEditingHref(false);
-                  setHrefValue(item.href ?? "");
-                }
+                if (e.key === "Escape") { setEditingHref(false); setHrefValue(item.href ?? ""); }
               }}
               placeholder="https://..."
               style={{ color: "#888", fontSize: "11px" }}
@@ -378,10 +380,7 @@ function SortableNavItem({
           onBlur={commitLabel}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitLabel();
-            if (e.key === "Escape") {
-              setEditingLabel(false);
-              setLabelValue(item.label ?? "");
-            }
+            if (e.key === "Escape") { setEditingLabel(false); setLabelValue(item.label ?? ""); }
           }}
           placeholder="Badge text"
           {...stopProp}
@@ -410,10 +409,7 @@ function SortableNavItem({
               onBlur={commitHref}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitHref();
-                if (e.key === "Escape") {
-                  setEditingHref(false);
-                  setHrefValue(item.href ?? "");
-                }
+                if (e.key === "Escape") { setEditingHref(false); setHrefValue(item.href ?? ""); }
               }}
               placeholder="https://github.com/..."
               style={{ fontSize: "11px", color: "#888" }}
@@ -447,7 +443,13 @@ function SortableNavItem({
 
   if (item.type === "divider-v") {
     return (
-      <div ref={setNodeRef} style={dragStyle} {...attributes} {...listeners} className="flex items-center flex-shrink-0">
+      <div
+        ref={setNodeRef}
+        style={containerStyle}
+        {...attributes}
+        {...listeners}
+        className="flex items-center flex-shrink-0 cursor-grab"
+      >
         <div className="h-6 w-px mx-1" style={{ backgroundColor: "var(--color-border)" }} />
       </div>
     );
@@ -456,30 +458,28 @@ function SortableNavItem({
   return (
     <div
       ref={setNodeRef}
-      style={dragStyle}
+      style={containerStyle}
       className="relative flex items-center gap-1 px-2 py-1 rounded-md border text-sm flex-shrink-0 overflow-hidden"
       {...attributes}
       onClick={() => onSelect(item.id)}
     >
-      <div className="flex items-center gap-1 w-full min-w-0" {...listeners}>
+      <div className="flex items-center gap-1 w-full min-w-0" {...listeners} style={{ cursor: "grab" }}>
         {renderContent()}
         <button
-          {...stopProp}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
           className="ml-auto text-gray-300 hover:text-red-400 flex-shrink-0 text-base leading-none"
         >
           ×
         </button>
       </div>
-      {item.type !== "divider-v" && (
-        <div
-          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize opacity-0 hover:opacity-100 transition-opacity"
-          style={{ backgroundColor: "var(--color-accent)" }}
-          onPointerDown={handleResizePointerDown}
-          onPointerMove={handleResizePointerMove}
-          onPointerUp={handleResizePointerUp}
-        />
-      )}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize opacity-0 hover:opacity-100 transition-opacity"
+        style={{ backgroundColor: "var(--color-accent)" }}
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerUp}
+      />
     </div>
   );
 }
@@ -488,33 +488,47 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
   const [items, setItems] = useState<NavbarItem[]>(initialItems);
   const [showToolbox, setShowToolbox] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const widthSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
+  useEffect(() => {
+    const timers = widthSaveTimers.current;
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
+
   async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = items.findIndex((i) => i.id === active.id);
-    const newIdx = items.findIndex((i) => i.id === over.id);
-    const reordered = arrayMove(items, oldIdx, newIdx);
-    setItems(reordered);
+    const { active, delta } = event;
+    const idx = items.findIndex((i) => i.id === active.id);
+    if (idx < 0) return;
+    const item = items[idx];
+    const currentX = getItemX(item, idx, items);
+    const newX = Math.max(0, currentX + delta.x);
+    const currentStyles = parseStyles(item.styles ?? "{}");
+    const newStyles = JSON.stringify({ ...currentStyles, x: newX });
+    setItems((prev) => prev.map((i) => i.id === active.id ? { ...i, styles: newStyles } : i));
     try {
-      await reorderNavbarItems(projectId, reordered.map((i) => i.id));
+      await updateNavbarItem(active.id as string, { styles: newStyles });
     } catch {
-      toast.error("Failed to reorder");
+      toast.error("Failed to save position");
     }
   }
 
   async function handleAddItem(type: string, label: string) {
     try {
+      const newX = computeNextX(items);
       const item = await createNavbarItem(
         projectId,
         type,
         type === "title" ? projectName : label
       );
-      setItems((prev) => [...prev, { ...item, styles: null }]);
+      const stylesWithX = JSON.stringify({ x: newX });
+      await updateNavbarItem(item.id, { styles: stylesWithX });
+      setItems((prev) => [...prev, { ...item, styles: stylesWithX }]);
       setShowToolbox(false);
     } catch {
       toast.error("Failed to add item");
@@ -533,6 +547,14 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
 
   function handleUpdate(id: string, data: ItemUpdate) {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...data } : i)));
+    if (data.width !== undefined) {
+      const safeWidth = Math.max(60, Math.round(data.width));
+      if (widthSaveTimers.current[id]) clearTimeout(widthSaveTimers.current[id]);
+      widthSaveTimers.current[id] = setTimeout(() => {
+        updateNavbarItem(id, { width: safeWidth }).catch(() => toast.error("Failed to save width"));
+      }, 220);
+      return;
+    }
     if (data.label !== undefined || data.href !== undefined) {
       updateNavbarItem(id, data).catch(() => toast.error("Failed to save"));
     }
@@ -548,6 +570,12 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
     updateNavbarItem(id, { styles: stylesStr }).catch(() => toast.error("Failed to save styles"));
   }
 
+  const navbarContentWidth = items.reduce((max, item, i) => {
+    const x = getItemX(item, i, items);
+    const w = item.type === "divider-v" ? 20 : (item.width ?? 120);
+    return Math.max(max, x + w + 40);
+  }, 300);
+
   const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
   const selectedStyles = parseStyles(selectedItem?.styles ?? "{}");
 
@@ -557,18 +585,31 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
       style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg-alt)" }}
     >
       <div className="flex items-center gap-2 px-4" style={{ height: "60px" }}>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={items.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
-            <div className="flex items-center gap-2 flex-1 overflow-x-auto h-full py-2">
+        <DndContext id="navbar-dnd" sensors={sensors} onDragEnd={handleDragEnd}>
+          <div
+            className="flex-1 overflow-x-auto h-full"
+            style={{ position: "relative" }}
+          >
+            <div style={{ position: "relative", height: "100%", minWidth: `${navbarContentWidth}px` }}>
               {items.length === 0 && (
-                <span className="text-xs" style={{ color: "#aaa" }}>
+                <span
+                  className="text-xs"
+                  style={{
+                    color: "#aaa",
+                    position: "absolute",
+                    left: "8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                >
                   Click + Add to build your navbar
                 </span>
               )}
-              {items.map((item) => (
-                <SortableNavItem
+              {items.map((item, index) => (
+                <DraggableNavItem
                   key={item.id}
                   item={item}
+                  itemX={getItemX(item, index, items)}
                   isSelected={selectedItemId === item.id}
                   onSelect={(id) => setSelectedItemId((prev) => (prev === id ? null : id))}
                   onDelete={handleDelete}
@@ -577,7 +618,7 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
                 />
               ))}
             </div>
-          </SortableContext>
+          </div>
         </DndContext>
 
         <div className="relative flex-shrink-0">
@@ -622,7 +663,9 @@ export default function NavbarEditor({ projectId, projectName, initialItems, onS
           className="flex items-center gap-4 px-4 py-2 border-t"
           style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-bg)" }}
         >
-          <span className="text-xs font-medium" style={{ color: "#888" }}>Style: {selectedItem.type}</span>
+          <span className="text-xs font-medium" style={{ color: "#888" }}>
+            Style: {selectedItem.type}
+          </span>
           <label className="flex items-center gap-1.5 text-xs">
             Bg
             <input

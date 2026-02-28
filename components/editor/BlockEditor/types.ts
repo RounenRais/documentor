@@ -91,6 +91,7 @@ export type BlockType = BlockData["type"];
 
 export type Block = {
   id: string;
+  width?: "full" | "1/2" | "1/3" | "2/3";
   data: BlockData;
 };
 
@@ -142,6 +143,7 @@ export type ItemStyles = {
   fontSize?: number;
   padding?: string;
   borderRadius?: number;
+  x?: number;
 };
 
 export function parseStyles(raw: string | null): ItemStyles {
